@@ -547,7 +547,7 @@ function renderSetup() {
     <div id="range-status">${rangeStatusHtml(count)}</div>
     <div class="h-px bg-slate-200 dark:bg-slate-700/60 my-6"></div>
     <div class="flex items-center justify-between gap-4">
-      <div class="text-[13px] text-slate-500 dark:text-slate-400">Questions are shuffled (Fisher–Yates) within your selected range.</div>
+      <div class="text-[13px] text-slate-500 dark:text-slate-400">Quiz is always <strong>exactly 50 questions</strong>, randomly picked from your selected range.</div>
       <button id="start-quiz-btn" ${valid?'':'disabled'} onclick="startQuiz()"
         class="shrink-0 px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
         Start Exam →
@@ -572,10 +572,20 @@ function renderSetup() {
 }
 
 function rangeStatusHtml(count) {
-  if (count < 50 && count > 0) {
-    return `<div class="px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-400 rounded-xl text-sm text-amber-700 dark:text-amber-400">⚠️ Minimum range is 50 questions. Current: ${count} questions.</div>`;
-  } else if (count >= 50) {
-    return `<div class="px-4 py-3 bg-accent/5 border border-accent rounded-xl text-sm text-accent">✓ ${count} questions selected — will be randomized.</div>`;
+  if (count > 0 && count < 50) {
+    return `<div class="px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-400 rounded-xl text-sm text-amber-700 dark:text-amber-400">
+      ⚠️ Minimum range is 50 questions. Current selection: ${count} question${count!==1?'s':''}.
+    </div>`;
+  }
+  if (count === 50) {
+    return `<div class="px-4 py-3 bg-accent/5 border border-accent rounded-xl text-sm text-accent">
+      ✓ Exactly 50 questions selected — all 50 will be shuffled into your quiz.
+    </div>`;
+  }
+  if (count > 50) {
+    return `<div class="px-4 py-3 bg-accent/5 border border-accent rounded-xl text-sm text-accent">
+      ✓ ${count} questions in range — <strong>50 will be picked randomly</strong> from this pool for your quiz.
+    </div>`;
   }
   return '';
 }
@@ -892,15 +902,29 @@ function updateRange() {
 
 function startQuiz() {
   const { from, to } = state.quizRange;
-  // Use display id (sequential 1..N assigned by the parser) for range filtering.
-  const slice = state.questions.filter(q => q.id >= from && q.id <= to);
-  if (slice.length < 50) {
-    toast('Not enough questions in range. Minimum 50 required.', 'error'); return;
+  const rangeSize = to - from + 1;
+
+  // Rule 1: Minimum interval guard — range span must be at least 50.
+  if (rangeSize < 50) {
+    toast('Select a range of at least 50 questions.', 'error'); return;
   }
-  state.quizQuestions = shuffle(slice);
-  state.currentIdx = 0;
-  state.userAnswers = {};
-  state.startTime = Date.now();
+
+  // Filter the full question bank to the chosen range.
+  const pool = state.questions.filter(q => q.id >= from && q.id <= to);
+
+  // Shouldn't happen if the PDF was parsed correctly, but guard anyway.
+  if (pool.length < 50) {
+    toast(`Only ${pool.length} questions found in that range. Need at least 50.`, 'error'); return;
+  }
+
+  // Rule 2 & 3: Shuffle the pool, then take exactly the first 50.
+  // If the pool is exactly 50, shuffle keeps all of them.
+  // If the pool is larger (e.g. 1–704 → 704 questions), we still only
+  // ever present 50 randomly chosen ones.
+  state.quizQuestions = shuffle(pool).slice(0, 50);
+  state.currentIdx    = 0;
+  state.userAnswers   = {};
+  state.startTime     = Date.now();
   clearDraft();
   state.view = 'quiz';
   render();
